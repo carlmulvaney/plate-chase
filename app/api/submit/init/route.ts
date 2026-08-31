@@ -73,11 +73,17 @@ export async function POST(request: NextRequest) {
       .single()
 
     return NextResponse.json(
-      dbErrorBody(error, {
-        plate,
-        claimedNumber: number,
-        nextTarget: state?.next_target ?? null,
-      }),
+      {
+        ...dbErrorBody(error, {
+          plate,
+          claimedNumber: number,
+          nextTarget: state?.next_target ?? null,
+        }),
+        // The number this attempt was aimed at, as the database sees it. The
+        // batch screen reports this rather than deriving a number from a row's
+        // position, which drifts the moment the page refreshes its target.
+        target: state?.next_target ?? null,
+      },
       { status: statusForDbError(error) },
     )
   }
