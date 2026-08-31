@@ -15,7 +15,7 @@
 --   psql -d pc_test -f supabase/migrations/20260830000000_plate_chase.sql
 --   psql -d pc_test -f supabase/tests/test_plate_chase.sql
 --
--- Expect: 44 ok, 0 FAIL. The file exits non-zero if any test fails, and is
+-- Expect: 56 ok, 0 FAIL. The file exits non-zero if any test fails, and is
 -- re-runnable against a fresh database.
 -- ============================================================================
 
@@ -372,6 +372,89 @@ select t_run('40 the review log has no insert policy, so nobody can forge one',
      select id, 'bbbbbbbb-0000-0000-0000-000000000002', 'approve' from claims limit 1$q$, true);
 
 reset role;
+
+
+-- ============================================================================
+-- The review queue  (v_review_queue)
+--
+-- State at this point: Ann has 69 approved, 70 pending (rejection undone),
+-- 71 pending. Bob has 104 pending with no photo. Acting as Bob.
+-- ============================================================================
+
+set role authed;
+select t_as('bbbbbbbb-0000-0000-0000-000000000002');
+
+select t_true('41 the queue shows another player''s uploaded pending claims',
+  (select count(*) from v_review_queue where player_id = 'aaaaaaaa-0000-0000-0000-000000000001') = 2,
+  (select coalesce(string_agg(number::text, ','), 'none') from v_review_queue));
+
+select t_true('42 the queue never shows your own claims',
+  (select count(*) from v_review_queue where player_id = 'bbbbbbbb-0000-0000-0000-000000000002') = 0);
+
+select t_true('43 the queue carries the predecessor capture time rule 4 compared',
+  (select previous_captured_at is not null from v_review_queue where number = 70));
+
+select t_true('43b a claim with a predecessor reports its number',
+  (select previous_number from v_review_queue where number = 70) = 69);
+
+-- What a rejection would cost, so a reviewer can see it before clicking.
+-- Ann has 70 and 71 standing; rejecting 70 would orphan 71.
+select t_true('43c the queue counts the claims a rejection would block',
+  (select claims_after from v_review_queue where number = 70) = 1,
+  (select 'got ' || claims_after::text from v_review_queue where number = 70));
+
+select t_true('43d the topmost claim blocks nothing',
+  (select claims_after from v_review_queue where number = 71) = 0);
+
+reset role;
+
+-- A claim with no predecessor must be distinguishable from one whose
+-- predecessor merely has no capture time. Bob's 104 is his seed_next, so there
+-- is no claim at 103 and rule 4 passed vacuously. Give it a photo so it
+-- reaches the queue, then look at it as Ann — the queue never shows your own.
+update claims set uploaded_at = now()
+  where player_id = 'bbbbbbbb-0000-0000-0000-000000000002' and number = 104;
+select t_as('aaaaaaaa-0000-0000-0000-000000000001');
+
+select t_true('43a a claim with no predecessor reports no previous number',
+  (select previous_number is null from v_review_queue where number = 104),
+  'expected null — not 103, and certainly not -1');
+
+set role authed;
+select t_as('bbbbbbbb-0000-0000-0000-000000000002');
+
+reset role;
+
+-- A claim with no photo yet cannot be judged, so it is not offered. Cid's
+-- 112 was never uploaded.
+insert into claims (player_id, number, plate, photo_key)
+  values ('cccccccc-0000-0000-0000-000000000003', 112, '1ABC112', 'k/cid/112');
+select t_true('44 a claim with no upload is not in the queue',
+  (select count(*) from v_review_queue where number = 112) = 0);
+
+-- Reject 70 again, and everything above it should leave the queue: those
+-- claims are orphaned, and no verdict on them would change anything.
+select t_as('bbbbbbbb-0000-0000-0000-000000000002');
+update claims set status = 'rejected'
+  where player_id = 'aaaaaaaa-0000-0000-0000-000000000001' and number = 70;
+
+select t_true('45 rejecting a claim removes the orphaned claims above it',
+  (select count(*) from v_review_queue where player_id = 'aaaaaaaa-0000-0000-0000-000000000001') = 0);
+
+select t_true('46 the rejected claim is offered for undo to its rejector',
+  (select can_undo from v_rejected_claims where number = 70));
+
+select t_as('aaaaaaaa-0000-0000-0000-000000000001');
+select t_true('47 and not to anyone else',
+  (select can_undo from v_rejected_claims where number = 70) = false);
+
+-- Undoing brings them all back, unreviewed, with nothing repaired.
+select t_as('bbbbbbbb-0000-0000-0000-000000000002');
+update claims set status = 'pending'
+  where player_id = 'aaaaaaaa-0000-0000-0000-000000000001' and number = 70;
+
+select t_true('48 undo returns the orphaned claims to the queue',
+  (select count(*) from v_review_queue where player_id = 'aaaaaaaa-0000-0000-0000-000000000001') = 2);
 
 
 -- ============================================================================

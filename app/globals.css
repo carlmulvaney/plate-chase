@@ -24,3 +24,13 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/*
+  Keep the scrollbar's space reserved whether or not it is showing. Without
+  this, a page that grows tall enough to scroll narrows the viewport by the
+  scrollbar's width the moment it appears, and every centred layout jumps
+  sideways — which on the review screen moves the verdict buttons.
+*/
+html {
+  scrollbar-gutter: stable;
+}

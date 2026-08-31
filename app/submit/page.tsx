@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { SubmitForm } from './submit-form'
@@ -25,11 +26,19 @@ export default async function SubmitPage() {
   }
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-md flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold">
-          Target plate: {formatTarget(state.next_target)}
-        </h1>
+        <div className="flex items-baseline justify-between gap-3">
+          <h1 className="text-2xl font-semibold">
+            Target plate: {formatTarget(state.next_target)}
+          </h1>
+          <Link
+            href="/review"
+            className="shrink-0 text-sm text-neutral-500 underline underline-offset-4"
+          >
+            Review
+          </Link>
+        </div>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
           {state.display_name} — {state.confirmed_count} confirmed ·{' '}
           {state.pending_count} pending

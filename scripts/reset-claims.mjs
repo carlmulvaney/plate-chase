@@ -1,8 +1,11 @@
 /**
- * Delete every claim and every photo, so testing can start from 000 again.
+ * Delete every claim and every photo, so testing can start from 000 again —
+ * or, with --reopen, put every claim back to pending and keep the photos, so
+ * the review flow can be run again without re-uploading anything.
  *
  *   node --env-file=.env scripts/reset-claims.mjs                    # dry run
  *   node --env-file=.env scripts/reset-claims.mjs --project <ref> --confirm
+ *   node --env-file=.env scripts/reset-claims.mjs --reopen --project <ref> --confirm
  *
  * This is pointed at whatever SUPABASE_DB_URL names, and there is currently no
  * separate development project — so in practice it is pointed at production.
@@ -26,6 +29,7 @@ import pg from 'pg'
 
 const args = process.argv.slice(2)
 const confirm = args.includes('--confirm')
+const reopen = args.includes('--reopen')
 const wanted = args[args.indexOf('--project') + 1]
 const named = args.includes('--project') && wanted && !wanted.startsWith('--')
 
@@ -78,6 +82,7 @@ for (const bucket of buckets) {
   objects[bucket] = (out.Contents ?? []).map((o) => o.Key)
 }
 
+console.log(reopen ? 'mode: reopen (photos kept)' : 'mode: delete everything')
 console.log(`claims:              ${claims.length}`)
 for (const c of claims) {
   console.log(`   ${String(c.number).padStart(3, '0')}  ${c.plate}  ${c.status}`)
@@ -86,8 +91,43 @@ console.log(`claim_review_events: ${events}`)
 for (const bucket of buckets) console.log(`${bucket}: ${objects[bucket].length} object(s)`)
 
 if (!confirm) {
-  console.log(`\nDry run. To delete all of the above:`)
-  console.log(`  node --env-file=.env scripts/reset-claims.mjs --project ${actual} --confirm`)
+  console.log(reopen ? `\nDry run. To reopen all of the above:` : `\nDry run. To delete all of the above:`)
+  console.log(
+    `  node --env-file=.env scripts/reset-claims.mjs ${reopen ? '--reopen ' : ''}--project ${actual} --confirm`,
+  )
+  await db.end()
+  process.exit(0)
+}
+
+if (reopen) {
+  // The update guard refuses approved -> pending, and refuses any verdict
+  // change with no signed-in reviewer. Both are right, and both are about
+  // reviewing. This is neither: it puts fixtures back to how they started, so
+  // the triggers stand aside for it and are restored immediately after.
+  console.log('\nreopening…')
+  await db.query('alter table claims disable trigger trg_claims_before_update_guard')
+  await db.query('alter table claims disable trigger trg_claims_after_status_change_log')
+  try {
+    const reset = await db.query(
+      `update claims set status = 'pending', reviewed_by = null, reviewed_at = null
+        where status <> 'pending'`,
+    )
+    await db.query('delete from claim_review_events')
+    console.log(`  ${reset.rowCount} claim(s) back to pending, review log cleared`)
+  } finally {
+    await db.query('alter table claims enable trigger trg_claims_before_update_guard')
+    await db.query('alter table claims enable trigger trg_claims_after_status_change_log')
+  }
+
+  const { rows: reopened } = await db.query(
+    'select display_name, next_target, pending_count from v_player_state order by display_name',
+  )
+  console.log()
+  for (const p of reopened) {
+    console.log(
+      `${p.display_name} · next_target ${String(p.next_target).padStart(3, '0')} · ${p.pending_count} pending`,
+    )
+  }
   await db.end()
   process.exit(0)
 }
