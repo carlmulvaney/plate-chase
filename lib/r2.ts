@@ -17,4 +17,20 @@ export const r2 = new S3Client({
   },
 })
 
-export const R2_BUCKET = process.env.R2_BUCKET!
+/**
+ * Two buckets, deliberately.
+ *
+ * ORIGINALS holds the file exactly as the phone produced it — the evidence of
+ * record. Rule 4 is enforced on the EXIF capture time read out of it, and a
+ * disputed claim is re-derivable from it later, so nothing may ever overwrite
+ * or rewrite an object in here.
+ *
+ * DISPLAY holds what the browser actually renders: HEIC transcoded to
+ * something browsers understand, resized for the review screen and the map.
+ * Everything in here is disposable and can be regenerated from the original.
+ *
+ * The same object key is used in both, so claims.photo_key stays a single
+ * column — the bucket is chosen by what the caller needs, not by the key.
+ */
+export const R2_BUCKET_ORIGINALS = process.env.R2_BUCKET_ORIGINALS!
+export const R2_BUCKET_DISPLAY = process.env.R2_BUCKET_DISPLAY!
