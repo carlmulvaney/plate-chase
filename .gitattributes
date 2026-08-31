@@ -1,0 +1,4 @@
+# SQL is byte-sensitive here: migrations are identified by sha256 and verified
+# as exact bytes against a real Postgres. Git's autocrlf would rewrite line
+# endings on checkout and change that hash, so leave SQL alone.
+*.sql -text
