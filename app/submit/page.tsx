@@ -12,7 +12,7 @@ export default async function SubmitPage() {
   // Never recomputed here.
   const { data: state } = await supabase
     .from('v_player_state')
-    .select('display_name, next_target, confirmed_count, first_rejected')
+    .select('display_name, next_target, confirmed_count, pending_count, first_rejected')
     .eq('player_id', auth.user.id)
     .single()
 
@@ -28,10 +28,11 @@ export default async function SubmitPage() {
     <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
       <header>
         <h1 className="text-2xl font-semibold">
-          Next up: {formatTarget(state.next_target)}
+          Target plate: {formatTarget(state.next_target)}
         </h1>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          {state.display_name} — {state.confirmed_count} confirmed
+          {state.display_name} — {state.confirmed_count} confirmed ·{' '}
+          {state.pending_count} pending
           {state.first_rejected !== null && (
             <> · rejected at {formatTarget(state.first_rejected)}</>
           )}

@@ -69,7 +69,7 @@ function rephrase(raw: string, ctx: ErrorContext): string | null {
   // Rule 2 — target.
   if (raw.startsWith('rule 2:')) {
     if (ctx.nextTarget != null && ctx.claimedNumber != null) {
-      return `That plate claims ${pad(ctx.claimedNumber)}, but you're on ${pad(ctx.nextTarget)} next.`
+      return `The plate claims ${pad(ctx.claimedNumber)}, but you're on ${pad(ctx.nextTarget)}.`
     }
     if (ctx.nextTarget != null) return `You're on ${pad(ctx.nextTarget)} next.`
     return 'That plate is not the number you are up to.'
@@ -77,7 +77,7 @@ function rephrase(raw: string, ctx: ErrorContext): string | null {
 
   // Rule 4 — capture order.
   if (raw.startsWith('rule 4:')) {
-    return 'That photo was taken before the one for your previous plate. Each photo has to be taken after the one before it.'
+    return 'That photo was taken before your previous plate.'
   }
 
   // One live claim per number.

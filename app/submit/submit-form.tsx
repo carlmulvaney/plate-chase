@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { formatTarget } from '@/lib/plate'
 
 type Phase = 'idle' | 'claiming' | 'uploading' | 'confirming' | 'done' | 'error'
@@ -17,12 +18,22 @@ export function SubmitForm({ target }: { target: number }) {
   const [file, setFile] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
   const [failedFor, setFailedFor] = useState<File | null>(null)
+  const [plateCheck, setPlateCheck] = useState<
+    'idle' | 'checking' | 'ok' | 'bad' | 'unknown'
+  >('idle')
   const [phase, setPhase] = useState<Phase>('idle')
   const [message, setMessage] = useState<string | null>(null)
   const [result, setResult] = useState<Result | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const router = useRouter()
 
   const busy = phase === 'claiming' || phase === 'uploading' || phase === 'confirming'
+
+  // Enabled once there is a photo and the plate is not known to be bad.
+  // 'unknown' counts as permission: if the check could not reach the database
+  // we let the submission through and the constraint decides, rather than
+  // blocking on our own inability to ask.
+  const canSubmit = file !== null && (plateCheck === 'ok' || plateCheck === 'unknown')
 
   // A preview URL points at the file the browser already holds; it does not
   // read, decode or re-encode it. The bytes that get uploaded stay the bytes
@@ -34,6 +45,47 @@ export function SubmitForm({ target }: { target: number }) {
   // extension, let the <img> try and note which File it gave up on. Comparing
   // against the current file means choosing another one clears this by itself.
   const previewFailed = file !== null && failedFor === file
+
+  // Ask the database whether this looks like a plate, rather than keeping a
+  // second copy of the pattern here. /api/plate/check calls the same
+  // is_valid_plate() the check constraint uses, so the hint cannot disagree
+  // with the verdict. Debounced, and every state change happens inside the
+  // timer so a keystroke never renders a stale answer.
+  useEffect(() => {
+    const value = plate.trim()
+    const controller = new AbortController()
+
+    const timer = setTimeout(async () => {
+      if (value.length === 0) {
+        setPlateCheck('idle')
+        return
+      }
+      setPlateCheck('checking')
+      try {
+        const res = await fetch(`/api/plate/check?plate=${encodeURIComponent(value)}`, {
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          // Including 502. The database could not be asked, so we have no
+          // opinion — and 'unknown' must not gate the button, or an outage
+          // would lock someone out of submitting a perfectly good plate.
+          setPlateCheck('unknown')
+          return
+        }
+        const body = await res.json()
+        setPlateCheck(body.valid ? 'ok' : 'bad')
+      } catch {
+        // An abort is the next keystroke overtaking this one — not a failure,
+        // and the newer request will answer. Anything else is offline.
+        if (!controller.signal.aborted) setPlateCheck('unknown')
+      }
+    }, 300)
+
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [plate])
 
   // Release the handle when the file changes or the form goes away.
   useEffect(() => {
@@ -101,6 +153,13 @@ export function SubmitForm({ target }: { target: number }) {
 
       setResult(commit)
       setPhase('done')
+
+      // The target and the confirmed count live in the server component that
+      // renders this form. Without re-running it, "Claim the next one" would
+      // hand back a form still pointing at the number just claimed. Done here
+      // rather than in reset() so the new target has arrived by the time the
+      // form is shown again.
+      router.refresh()
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e))
       setPhase('error')
@@ -143,8 +202,21 @@ export function SubmitForm({ target }: { target: number }) {
           maxLength={7}
           className="rounded-md border border-neutral-300 px-3 py-2 font-mono text-lg tracking-widest dark:border-neutral-700 dark:bg-neutral-900"
         />
-        <p className="text-xs text-neutral-500">
-          Must end in {formatTarget(target)} — that&apos;s your target.
+        {/*
+          Always rendered, so the line it occupies is reserved whether or not
+          there is anything to say. Mounting it conditionally shifted the photo
+          field and the submit button down as soon as the check came back.
+        */}
+        <p
+          aria-live="polite"
+          className={`min-h-4 text-xs ${
+            plateCheck === 'bad'
+              ? 'text-amber-600 dark:text-amber-500'
+              : 'text-green-600 dark:text-green-500'
+          }`}
+        >
+          {plateCheck === 'bad' && 'Invalid plate format (e.g. 1ABC234)'}
+          {plateCheck === 'ok' && 'Valid plate format'}
         </p>
       </div>
 
@@ -220,23 +292,19 @@ export function SubmitForm({ target }: { target: number }) {
               type="button"
               disabled={busy}
               onClick={() => inputRef.current?.click()}
-              className="shrink-0 rounded-md border border-neutral-300 px-2.5 py-1 text-xs disabled:opacity-50 dark:border-neutral-700"
+              className="shrink-0 rounded-md border border-neutral-300 px-2.5 py-1 text-xs transition-colors enabled:hover:border-neutral-400 enabled:hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:enabled:hover:border-neutral-600 dark:enabled:hover:bg-neutral-800"
             >
               Change
             </button>
           </div>
         )}
 
-        <p className="text-xs text-neutral-500">
-          The original file, straight from your camera roll — it carries the
-          capture time.
-        </p>
       </div>
 
       <button
         type="submit"
-        disabled={busy || !file}
-        className="rounded-md bg-neutral-900 px-3 py-2.5 font-medium text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+        disabled={busy || !canSubmit}
+        className="rounded-md bg-neutral-900 px-3 py-2.5 font-medium text-white transition enabled:hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-neutral-900 dark:enabled:hover:bg-neutral-200"
       >
         {phase === 'claiming' && 'Claiming…'}
         {phase === 'uploading' && 'Uploading photo…'}

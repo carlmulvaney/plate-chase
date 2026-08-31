@@ -15,7 +15,7 @@
 --   psql -d pc_test -f supabase/migrations/20260830000000_plate_chase.sql
 --   psql -d pc_test -f supabase/tests/test_plate_chase.sql
 --
--- Expect: 42 ok, 0 FAIL. The file exits non-zero if any test fails, and is
+-- Expect: 44 ok, 0 FAIL. The file exits non-zero if any test fails, and is
 -- re-runnable against a fresh database.
 -- ============================================================================
 
@@ -279,6 +279,10 @@ select t_true('26 next_target falls back to the rejected number',
 select t_true('27 confirmed_count keeps the approved claim below the rejection',
   confirmed_count('aaaaaaaa-0000-0000-0000-000000000001') = 70);
 
+select t_true('27a pending_count counts claims that still stand',
+  pending_count('aaaaaaaa-0000-0000-0000-000000000001') = 0,
+  'expected 0: 69 is approved, 70 rejected, 71 orphaned above it');
+
 select t_true('28 a pending claim above the rejection is orphaned, not counted',
   (select count(*) from claims
     where player_id = 'aaaaaaaa-0000-0000-0000-000000000001'
@@ -307,6 +311,10 @@ select t_as('cccccccc-0000-0000-0000-000000000003');
 select t_run('31 an admin can undo a rejection',
   $q$update claims set status = 'pending'
       where player_id = 'aaaaaaaa-0000-0000-0000-000000000001' and number = 70$q$, false);
+
+select t_true('31a pending_count picks the claim back up after an undo',
+  pending_count('aaaaaaaa-0000-0000-0000-000000000001') = 2,
+  'expected 2: 70 and 71 both pending and below no rejection');
 
 select t_true('32 undo restores the streak with no repair logic',
   next_target('aaaaaaaa-0000-0000-0000-000000000001') = 72
