@@ -15,7 +15,7 @@
 --   psql -d pc_test -f supabase/migrations/20260830000000_plate_chase.sql
 --   psql -d pc_test -f supabase/tests/test_plate_chase.sql
 --
--- Expect: 40 ok, 0 FAIL. The file exits non-zero if any test fails, and is
+-- Expect: 42 ok, 0 FAIL. The file exits non-zero if any test fails, and is
 -- re-runnable against a fresh database.
 -- ============================================================================
 
@@ -120,6 +120,17 @@ select t_run('04 lowercase plate is refused',
 select t_run('05 wrong plate shape is refused',
   $q$insert into claims (player_id, number, plate, photo_key)
      values ('bbbbbbbb-0000-0000-0000-000000000002', 104, 'ABC1104', 'k/bob/104')$q$, true);
+
+-- Ordering of the two rules, not a new rule. Postgres runs BEFORE ROW triggers
+-- before check constraints, so rule 2 spoke first and a plate that was both
+-- malformed and wrongly targeted reported only its target.
+select t_run('05a a malformed plate is refused for its FORMAT, not its target',
+  $q$insert into claims (player_id, number, plate, photo_key)
+     values ('bbbbbbbb-0000-0000-0000-000000000002', 7, 'ABC0007', 'k/bob/7')$q$, true);
+
+select t_true('05b and the message names the plate, not the target',
+  (select detail from t_results where label like '05a%') like '%claims_plate_check%',
+  (select detail from t_results where label like '05a%'));
 
 select t_run('06 number that is not the plate last three is refused',
   $q$insert into claims (player_id, number, plate, photo_key)

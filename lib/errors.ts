@@ -1,11 +1,14 @@
 /**
- * Turning the database's answer into an HTTP response.
+ * Turning the database's answer into an HTTP response a person can read.
  *
- * The routes do not decide what is valid — constraints, triggers and policies
- * do. This maps what Postgres said into a status code, and passes its message
- * through rather than inventing a friendlier one, because the database's
- * message names the actual rule that fired ("rule 2: next target is 70, not
- * 72") and a rewritten one drifts from it.
+ * This layer decides nothing. Nothing here runs unless the database has
+ * already refused, and every branch is keyed on what it said — a constraint
+ * name or a message the schema raised. It rephrases; it never judges.
+ *
+ * The raw message always survives as `detail`, so a rule that fires
+ * unexpectedly stays diagnosable instead of being hidden behind friendly
+ * prose. If you find yourself wanting to add a case that fires *before* the
+ * database has spoken, that belongs in the schema, not here.
  */
 
 export type PgLikeError = {
@@ -36,13 +39,80 @@ export function statusForDbError(error: PgLikeError | null | undefined): number 
 }
 
 /**
- * A JSON body for a failed request. `rule` carries the database's message
- * verbatim so the UI can show which rule refused, rather than a generic
- * "invalid submission".
+ * Extra facts a caller can supply so a message can be specific. These are read
+ * from the database too — `nextTarget` comes from v_player_state, never from a
+ * calculation here.
  */
-export function dbErrorBody(error: PgLikeError | null | undefined) {
+export type ErrorContext = {
+  plate?: string
+  claimedNumber?: number
+  nextTarget?: number | null
+}
+
+const pad = (n: number) => n.toString().padStart(3, '0')
+
+/**
+ * The database's message, said in plain words. Returns null when we have no
+ * better phrasing than what the database already said.
+ */
+function rephrase(raw: string, ctx: ErrorContext): string | null {
+  // Rule 1 — format. Two separate constraints, two separate mistakes.
+  if (raw.includes('claims_plate_check')) {
+    return `A California plate looks like 1ABC234 — one digit, three letters, then three digits.${
+      ctx.plate ? ` "${ctx.plate}" doesn't.` : ''
+    }`
+  }
+  if (raw.includes('number_matches_plate')) {
+    return "The last three digits of the plate are the number you're claiming, and those don't match."
+  }
+
+  // Rule 2 — target.
+  if (raw.startsWith('rule 2:')) {
+    if (ctx.nextTarget != null && ctx.claimedNumber != null) {
+      return `That plate claims ${pad(ctx.claimedNumber)}, but you're on ${pad(ctx.nextTarget)} next.`
+    }
+    if (ctx.nextTarget != null) return `You're on ${pad(ctx.nextTarget)} next.`
+    return 'That plate is not the number you are up to.'
+  }
+
+  // Rule 4 — capture order.
+  if (raw.startsWith('rule 4:')) {
+    return 'That photo was taken before the one for your previous plate. Each photo has to be taken after the one before it.'
+  }
+
+  // One live claim per number.
+  if (raw.includes('one_live_claim_per_number')) {
+    return 'You already have a live claim on that number.'
+  }
+
+  // The update guard and review rules.
+  if (raw.includes('a player cannot review their own claim')) {
+    return 'You cannot review your own claim.'
+  }
+  if (raw.includes('finality window')) {
+    return 'This claim is too old to review now.'
+  }
+  if (raw.includes('claim evidence is immutable')) {
+    return 'A claim cannot be edited once submitted.'
+  }
+  if (raw.includes('only the original rejector or an admin')) {
+    return 'Only the person who rejected this, or an admin, can undo it.'
+  }
+
+  return null
+}
+
+/**
+ * A JSON body for a failed request.
+ *
+ * `error` is what the UI shows. `detail` is what the database actually said,
+ * kept so an unexpected rule is still traceable.
+ */
+export function dbErrorBody(error: PgLikeError | null | undefined, ctx: ErrorContext = {}) {
+  const raw = error?.message ?? 'unknown database error'
   return {
-    error: error?.message ?? 'unknown database error',
+    error: rephrase(raw, ctx) ?? raw,
+    detail: raw,
     code: error?.code ?? null,
   }
 }

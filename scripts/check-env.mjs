@@ -93,8 +93,12 @@ try {
   for (const name of ['R2_BUCKET_ORIGINALS', 'R2_BUCKET_DISPLAY']) {
     const bucket = need(name)
     try {
-      const out = await r2.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1 }))
-      record(`r2 bucket ${bucket}`, true, `readable, ${out.KeyCount ?? 0} object(s)`)
+      // MaxKeys 1 keeps this cheap — the question is whether the credentials
+      // can read the bucket, not how much is in it. Deliberately no object
+      // count: KeyCount here is capped at 1, so reporting it reads as "the
+      // bucket has one object" and would look like data had disappeared.
+      await r2.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1 }))
+      record(`r2 bucket ${bucket}`, true, 'readable')
     } catch (e) {
       record(`r2 bucket ${bucket}`, false, `${e.name}: ${e.message}`)
     }

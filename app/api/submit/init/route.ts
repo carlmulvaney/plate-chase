@@ -63,7 +63,23 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) {
-    return NextResponse.json(dbErrorBody(error), { status: statusForDbError(error) })
+    // Read the target back from the view rather than reasoning about it here.
+    // v_player_state is the single definition of next_target; recomputing it
+    // to write a nicer sentence would be a second definition.
+    const { data: state } = await supabase
+      .from('v_player_state')
+      .select('next_target')
+      .eq('player_id', auth.user.id)
+      .single()
+
+    return NextResponse.json(
+      dbErrorBody(error, {
+        plate,
+        claimedNumber: number,
+        nextTarget: state?.next_target ?? null,
+      }),
+      { status: statusForDbError(error) },
+    )
   }
 
   const uploadUrl = await getSignedUrl(

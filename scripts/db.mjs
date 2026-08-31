@@ -2,10 +2,18 @@
  * Apply supabase/migrations/*.sql to the database in SUPABASE_DB_URL.
  *
  *   node --env-file=.env scripts/db.mjs          # show what would run
- *   node --env-file=.env scripts/db.mjs --apply  # actually run it
+ *   node --env-file=.env scripts/db.mjs --apply  # run what is pending
  *
- * Each file runs inside its own transaction, so a migration that fails
- * halfway leaves nothing behind.
+ * Applied migrations are recorded in schema_migrations, so this is safe to run
+ * repeatedly against a live project: only pending files execute. Each runs
+ * inside its own transaction, together with its ledger row, so a migration
+ * that fails halfway leaves neither schema changes nor a false record of
+ * having been applied.
+ *
+ * The ledger also stores each file's sha256 and re-checks it. Migrations are
+ * forward-only; editing one that has already run is how two databases end up
+ * claiming the same version while holding different schemas, and this refuses
+ * to continue when it sees that.
  *
  * Only supabase/migrations/ is ever read. supabase/tests/ is deliberately out
  * of reach: _local_stub.sql redefines auth.uid(), and applying that to a live
@@ -44,20 +52,55 @@ const { rows: [v] } = await client.query('select version() as v')
 console.log(v.v.split(',')[0])
 console.log(`target: ${new URL(url.replace(/^postgresql:/, 'http:')).hostname}\n`)
 
+await client.query(`
+  create table if not exists schema_migrations (
+    filename   text primary key,
+    sha256     text not null,
+    applied_at timestamptz not null default now()
+  )
+`)
+
+const { rows: ledger } = await client.query('select filename, sha256 from schema_migrations')
+const applied = new Map(ledger.map((r) => [r.filename, r.sha256]))
+
+let pending = 0
+let drift = false
+
 for (const file of files) {
   const sql = await readFile(path.join(MIGRATIONS, file), 'utf8')
   const sha = createHash('sha256').update(sql).digest('hex')
+  const previous = applied.get(file)
+
+  if (previous) {
+    if (previous === sha) {
+      console.log(`${file}\n  already applied\n`)
+    } else {
+      drift = true
+      console.error(`${file}`)
+      console.error(`  ALREADY APPLIED, BUT THE FILE HAS CHANGED`)
+      console.error(`    recorded ${previous}`)
+      console.error(`    on disk  ${sha}`)
+      console.error(`  Migrations are forward-only. Add a new migration instead.\n`)
+    }
+    continue
+  }
+
+  pending++
   console.log(`${file}`)
   console.log(`  sha256 ${sha}`)
 
   if (!apply) {
-    console.log('  (dry run — pass --apply to execute)\n')
+    console.log('  pending (pass --apply to execute)\n')
     continue
   }
 
   try {
     await client.query('begin')
     await client.query(sql)
+    await client.query('insert into schema_migrations (filename, sha256) values ($1, $2)', [
+      file,
+      sha,
+    ])
     await client.query('commit')
     console.log('  applied\n')
   } catch (e) {
@@ -69,4 +112,6 @@ for (const file of files) {
   }
 }
 
+if (pending === 0) console.log('nothing pending')
 await client.end()
+process.exit(drift ? 1 : 0)
