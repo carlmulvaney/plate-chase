@@ -67,6 +67,9 @@ Do not relitigate these without asking. They were argued through and written dow
 - Every rule gets a test, including a negative case proving the constraint actually fires.
 - Design docs live in `docs/design/`. When a rule changes, the doc and its tests change in the same commit.
 - Prefer commenting out a superseded column over dropping it in the same migration; drop it later once nothing references it.
+- **The UI does not know the rules.** Never re-implement one client-side for faster feedback — two copies become two rules, and the one users see is the wrong one. If the UI needs to know whether something is valid, ask the database.
+- **Derived values come from one place.** Streak, next target, counts: defined once as a view or function, read from there, never recomputed in a component.
+- **UI changes must not move the layout.** See the `ui-stability` skill.
 
 ---
 
@@ -76,6 +79,8 @@ Do not relitigate these without asking. They were argued through and written dow
 - **Ask rather than assume.** If a requirement is ambiguous, ask — don't pick a reading and build on it silently.
 - **Changelogs are concise and bulleted.**
 - Flag design consequences that weren't asked about. A rule with an expensive side effect is worth a sentence before it's implemented, not after.
+- **A new feature starts with the `requirements` skill**, before any implementation code. The doc it produces is what QA verifies against.
+- **A feature is not done until `qa-verifier` has run against it.** It reads the design doc in a fresh context and checks each requirement against what was actually built. The author checking their own work is the gap it exists to close.
 
 ---
 

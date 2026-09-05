@@ -50,6 +50,43 @@ Every rule gets a test, and every test includes a **negative case** that proves 
 
 Test the rule at the layer that owns it. If the design doc says the database enforces something, the test must show the database rejecting it, not the API returning a 400.
 
+## The runbook
+
+Every schema change goes the same way. The tests run against a scratch
+database, never the project — `supabase/tests/_local_stub.sql` redefines
+`auth.uid()`, and applying that to a live project makes every policy evaluate
+false while the app still looks healthy.
+
+```bash
+# 1. write the migration in supabase/migrations/, and its tests
+
+# 2. apply everything to a scratch database from nothing
+createdb pc_test
+psql -d pc_test -c "create extension if not exists pgcrypto;"
+psql -d pc_test -f supabase/tests/_local_stub.sql
+for m in supabase/migrations/*.sql; do psql -d pc_test -v ON_ERROR_STOP=1 -f "$m"; done
+psql -d pc_test -f supabase/tests/test_plate_chase.sql   # expect N ok, 0 FAIL
+
+# 3. see what is pending against the real project, then apply it
+node --env-file=.env scripts/db.mjs
+node --env-file=.env scripts/db.mjs --apply
+
+# 4. confirm the project agrees
+node --env-file=.env scripts/check-env.mjs
+```
+
+Rebuilding the scratch database from empty each time is the point: it proves
+the migrations compose from nothing, which is the only state a new environment
+will ever start from.
+
+Two things that have bitten:
+
+- **`create or replace view` cannot reorder or rename columns.** Adding one at
+  the end is fine; anything else needs `drop view` first.
+- **A view's new column must be added to the app's `.select()` too.** PostgREST
+  returns only what is asked for, so a column added to a view and not to the
+  query is silently absent rather than an error.
+
 ## Naming
 
 - Tables plural, columns `snake_case`.
