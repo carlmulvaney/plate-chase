@@ -229,7 +229,17 @@ Deferred rather than rejected — see §8.
 
 ## 8. Open questions
 
-1. **Auto-approval** — deferred. If claims start piling up unreviewed in practice, the fix is a derived `effective_status` (pending past some age reads as approved) rather than a scheduled job that mutates rows, for the same reason rule 5 is derived in §6. Revisit once the game has been running long enough to know whether it's a real problem.
+1. **Auto-approval** — ~~deferred~~ **adopted, 2026-08-31**, in the shape this section predicted: a derived `effective_status`, not a job.
+
+   The reason turned out not to be review backlog. Once the finality window was corrected to bound rejection only (§7), a past-window claim had exactly two possible fates: someone clicks approve, or nobody does and it never counts. That click expresses no judgement, because the judgement it would express — rejection — is no longer available. Withholding the find until someone performs the formality is an arbitrary penalty for nobody having looked in time.
+
+   `effective_status(status, created_at)` returns `pending`, `approved`, `auto_approved` or `rejected`. `auto_approved` means `status = 'pending'` and the window has closed. Nothing is written: the claim is still pending, `reviewed_by` is still null, and there is no SYSTEM actor, because no actor acted. `claim_review_events` records review actions and this is the absence of one.
+
+   Downstream: `confirmed_count` counts it, `pending_count` does not, and it leaves `v_review_queue` — a queue is for things that need deciding. `v_auto_approved` lists them, and the submit screen shows a player their own, so the distinction between "verified" and "unobjected" is visible rather than silent.
+
+   Two consequences, both accepted:
+   - A confirmed count can rise overnight with no request and no write.
+   - `finality_days` is retroactive. Lower it and claims flip to auto-approved at once; raise it and they revert, and counts fall. That is the cost of it being reversible instead of stamped into rows.
 2. **Plate OCR** — deferred, not rejected. Reading the plate from the photo and comparing it to the claim would close the largest remaining gap: nothing machine-side verifies the image matches the number. Worth revisiting once the manual flow works.
 
 ---

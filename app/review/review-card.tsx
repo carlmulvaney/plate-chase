@@ -17,8 +17,6 @@ export type QueueItem = {
   previousNumber: number | null
   /** Claims of theirs above this one, which a rejection would orphan. */
   claimsAfter: number
-  /** False past the finality window: it can still be approved, not rejected. */
-  canReject: boolean
 }
 
 const when = (iso: string) =>
@@ -194,8 +192,7 @@ export function ReviewCard({ item, remaining }: { item: QueueItem; remaining: nu
       <div className="flex gap-3">
         <button
           onClick={() => decide('reject')}
-          disabled={busy || !item.canReject || !item.photoUrl}
-          title={item.canReject ? undefined : 'Past the finality window'}
+          disabled={busy || !item.photoUrl}
           className="flex-1 rounded-md bg-red-600 px-3 py-2.5 font-medium text-white transition enabled:hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Reject
@@ -210,11 +207,7 @@ export function ReviewCard({ item, remaining }: { item: QueueItem; remaining: nu
       </div>
 
       <p className="min-h-4 text-xs text-amber-600 dark:text-amber-500">
-        {!item.photoUrl
-          ? 'No photo to judge, so neither verdict is available.'
-          : !item.canReject
-            ? 'Past the finality window — this can be approved but no longer rejected.'
-            : ''}
+        {!item.photoUrl ? 'No photo to judge, so neither verdict is available.' : ''}
       </p>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

@@ -15,7 +15,7 @@
 --   psql -d pc_test -f supabase/migrations/20260830000000_plate_chase.sql
 --   psql -d pc_test -f supabase/tests/test_plate_chase.sql
 --
--- Expect: 66 ok, 0 FAIL. The file exits non-zero if any test fails, and is
+-- Expect: 73 ok, 0 FAIL. The file exits non-zero if any test fails, and is
 -- re-runnable against a fresh database.
 -- ============================================================================
 
@@ -538,14 +538,58 @@ select t_run('51 a claim past the window can still be approved',
       where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 200$q$, false);
 
 select t_true('51a and it counts',
-  confirmed_count('dddddddd-0000-0000-0000-000000000004') = 201,
-  'seed_next 200 plus the one approved claim');
+  confirmed_count('dddddddd-0000-0000-0000-000000000004') = 202,
+  'seed 200, plus 200 approved by hand, plus 201 auto-approved — both of Dee''s claims are past the window');
 
 -- An old claim is still reviewable, so it stays in the queue, carrying whether
 -- rejection is still open.
-select t_true('52 an old claim is still queued, and says rejection is closed',
-  (select can_reject = false from v_review_queue
-    where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 201));
+-- Past the window there is nothing left to decide, so it leaves the queue.
+select t_true('52 an old claim is no longer in the review queue',
+  (select count(*) from v_review_queue
+    where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 201) = 0);
+
+select t_true('52a it reads as auto_approved, though its status is still pending',
+  (select effective_status(status, created_at) from claims
+    where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 201) = 'auto_approved'
+  and (select status from claims
+    where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 201) = 'pending');
+
+select t_true('52b nobody is recorded as having approved it',
+  (select reviewed_by is null from claims
+    where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 201),
+  'auto-approval is the absence of a review, so there is no actor to record');
+
+select t_true('52c it counts, and is not reported as awaiting review',
+  confirmed_count('dddddddd-0000-0000-0000-000000000004') = 202
+  and pending_count('dddddddd-0000-0000-0000-000000000004') = 0
+  and auto_approved_count('dddddddd-0000-0000-0000-000000000004') = 1,
+  'seed 200 + approved 200 + auto-approved 201');
+
+select t_true('52d and it is listed as auto-approved',
+  (select count(*) from v_auto_approved
+    where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 201) = 1);
+
+-- The knob is live and retroactive, which is the cost of it being reversible.
+reset role;
+select t_as(null);
+update app_config set value = '90' where key = 'finality_days';
+
+select t_true('52e widening the window takes an auto-approval back',
+  (select effective_status(status, created_at) from claims
+    where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 201) = 'pending'
+  and confirmed_count('dddddddd-0000-0000-0000-000000000004') = 201,
+  'the count falls again, with nothing written or undone');
+
+update app_config set value = '14' where key = 'finality_days';
+set role authed;
+select t_as('bbbbbbbb-0000-0000-0000-000000000002');
+
+select t_true('52f and narrowing it puts the auto-approval back',
+  confirmed_count('dddddddd-0000-0000-0000-000000000004') = 202);
+
+select t_true('52g a fresh claim is pending, not auto-approved',
+  (select effective_status(status, created_at) from claims
+    where player_id = 'aaaaaaaa-0000-0000-0000-000000000001' and number = 71) = 'pending');
 
 -- The defect this section exists for: undo past the window restored the row
 -- and then stranded it, because the re-judgement undo exists to reopen was

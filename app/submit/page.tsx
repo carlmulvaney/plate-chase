@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { SubmitForm } from './submit-form'
+import { AutoApproved } from './auto-approved'
 import { formatTarget } from '@/lib/plate'
 
 export default async function SubmitPage() {
@@ -13,7 +14,9 @@ export default async function SubmitPage() {
   // Never recomputed here.
   const { data: state } = await supabase
     .from('v_player_state')
-    .select('display_name, next_target, confirmed_count, pending_count, first_rejected')
+    .select(
+      'display_name, next_target, confirmed_count, pending_count, auto_approved_count, first_rejected',
+    )
     .eq('player_id', auth.user.id)
     .single()
 
@@ -42,6 +45,9 @@ export default async function SubmitPage() {
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
           {state.display_name} — {state.confirmed_count} confirmed ·{' '}
           {state.pending_count} pending
+          {state.auto_approved_count > 0 && (
+            <> · {state.auto_approved_count} unobjected</>
+          )}
           {state.first_rejected !== null && (
             <> · rejected at {formatTarget(state.first_rejected)}</>
           )}
@@ -49,6 +55,8 @@ export default async function SubmitPage() {
       </header>
 
       <SubmitForm target={state.next_target} />
+
+      <AutoApproved playerId={auth.user.id} />
     </main>
   )
 }

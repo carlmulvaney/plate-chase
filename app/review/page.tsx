@@ -18,7 +18,7 @@ export default async function ReviewPage() {
   const { data: queue } = await supabase
     .from('v_review_queue')
     .select(
-      'id, submitter, number, plate, photo_key, captured_at, previous_captured_at, previous_number, claims_after, can_reject',
+      'id, submitter, number, plate, photo_key, captured_at, previous_captured_at, previous_number, claims_after',
     )
 
   const { data: rejected } = await supabase
@@ -39,7 +39,6 @@ export default async function ReviewPage() {
         previousCapturedAt: next.previous_captured_at,
         previousNumber: next.previous_number,
         claimsAfter: next.claims_after,
-        canReject: next.can_reject,
       }
     : null
 
