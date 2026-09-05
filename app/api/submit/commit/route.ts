@@ -98,7 +98,6 @@ export async function POST(request: NextRequest) {
   // --- display derivative ------------------------------------------------
   // Non-fatal by design: the claim is already valid and recorded, and anything
   // in the display bucket can be regenerated from the original at any time.
-  let displayReady = false
   try {
     const derivative = await buildDisplayImage(original)
     await r2.send(
@@ -109,7 +108,6 @@ export async function POST(request: NextRequest) {
         ContentType: derivative.contentType,
       }),
     )
-    displayReady = true
   } catch (e) {
     console.error(`display derivative failed for claim ${claim.id}:`, e)
   }
@@ -119,7 +117,6 @@ export async function POST(request: NextRequest) {
     number: claim.number,
     capturedAt: meta.capturedAt?.toISOString() ?? null,
     hasLocation: meta.lat !== null,
-    displayReady,
     // Surfaced so the UI can say so plainly: a claim with no capture time is
     // not in trouble, it just needs a human to judge the ordering.
     needsHumanOrdering: meta.capturedAt === null,

@@ -26,13 +26,12 @@ export function displayPhotoUrl(photoKey: string, expiresIn = 10 * 60): Promise<
 }
 
 /**
- * The same URL, or null when there is no derivative to point at.
+ * The same URL, or null when there is no display copy.
  *
- * The confirm step treats a failed transcode as non-fatal — the claim is valid
- * and the original is safe — which left the review screen rendering a broken
- * image with live verdict buttons under it. Seeing the photo is the entire
- * point of that screen, so the absence has to be reported rather than
- * discovered by the browser.
+ * Null is not an error state to recover from here: the review card shows NO
+ * PHOTO and leaves both verdicts available, because judging a claim without a
+ * photo is a judgement and belongs to the reviewer. Rebuilding missing copies
+ * is scripts/rebuild-derivatives.mjs, so a read stays a read.
  */
 export async function displayPhotoUrlIfPresent(photoKey: string): Promise<string | null> {
   try {

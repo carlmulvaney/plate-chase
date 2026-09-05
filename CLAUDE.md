@@ -75,10 +75,14 @@ Do not relitigate these without asking. They were argued through and written dow
 
 ## How to work on this project
 
+- **Fix the cause.** Trace a failure to the decision that allowed it and fix that. A workaround that leaves the cause in place is debt — say so plainly and call it debt, rather than describing it as a fix.
+- **Don't build machinery around a state that shouldn't exist.** If fixing the cause makes a condition impossible, delete the handling for it. Adding an escape hatch, then a message, then space reserved for the message, is three pieces of code standing in for one deletion.
+- **Comments are concise and direct.** What the code does, and why a non-obvious choice was made. Not the history of how it came to be that way — that is what commits are for.
 - **Suggest first.** Propose the change, answer any questions, summarize what was agreed, and write code only after approval. This applies to schema changes especially.
 - **Ask rather than assume.** If a requirement is ambiguous, ask — don't pick a reading and build on it silently.
 - **Changelogs are concise and bulleted.**
 - Flag design consequences that weren't asked about. A rule with an expensive side effect is worth a sentence before it's implemented, not after.
+- **Work happens on a branch, never on `main` directly** — including one-line copy changes. Small edits are exactly what stacked 47 commits the first time; "too small to branch" is how it happens. Commit freely on the branch, then squash-merge one commit per unit of work when it is agreed. `main` is a list of features, not of keystrokes.
 - **A new feature starts with the `requirements` skill**, before any implementation code. The doc it produces is what QA verifies against.
 - **A feature is not done until `qa-verifier` has run against it.** It reads the design doc in a fresh context and checks each requirement against what was actually built. The author checking their own work is the gap it exists to close.
 

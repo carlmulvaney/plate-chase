@@ -149,10 +149,9 @@ export function ReviewCard({ item, remaining }: { item: QueueItem; remaining: nu
             className="max-h-full max-w-full object-contain"
           />
         ) : (
-          <p className="max-w-xs px-4 text-center text-sm text-neutral-500">
-            No viewable copy of this photo. The original is safe; the version
-            for display was never produced.
-          </p>
+          <span className="text-sm font-semibold tracking-wide text-neutral-500">
+            NO PHOTO
+          </span>
         )}
       </div>
 
@@ -192,25 +191,22 @@ export function ReviewCard({ item, remaining }: { item: QueueItem; remaining: nu
       <div className="flex gap-3">
         <button
           onClick={() => decide('reject')}
-          disabled={busy || !item.photoUrl}
+          disabled={busy}
           className="flex-1 rounded-md bg-red-600 px-3 py-2.5 font-medium text-white transition enabled:hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Reject
         </button>
         <button
           onClick={() => decide('approve')}
-          disabled={busy || !item.photoUrl}
+          disabled={busy}
           className="flex-1 rounded-md bg-green-600 px-3 py-2.5 font-medium text-white transition enabled:hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Approve
         </button>
       </div>
 
-      <p className="min-h-4 text-xs text-amber-600 dark:text-amber-500">
-        {!item.photoUrl ? 'No photo to judge, so neither verdict is available.' : ''}
-      </p>
-
       {error && <p className="text-sm text-red-600">{error}</p>}
+
       <p className="text-xs text-neutral-500">
         {remaining > 0 ? `${remaining} more waiting` : 'Last one'}
       </p>
