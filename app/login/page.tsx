@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { LoginForm } from './login-form'
+import { HashError } from './hash-error'
 
 export default async function LoginPage({
   searchParams,
@@ -21,6 +22,7 @@ export default async function LoginPage({
           Sign in to claim a plate.
         </p>
       </div>
+      <HashError />
       {error && (
         <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
           {error}
