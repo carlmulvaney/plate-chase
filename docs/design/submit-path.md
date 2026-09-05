@@ -247,3 +247,7 @@ Deferred rather than rejected — see §8.
 ## 9. Not in scope
 
 Leaderboard, progress chart, and map are all read-side and depend only on `claims` plus the derived values in §6. They come after the submit and review paths work.
+
+**A claims table** belongs with them: every claim in one place, filterable by status and by player, sortable by the dates. It replaces two things built earlier as stopgaps — the "Counted unobjected" section on the submit screen and, probably, the rejections list on the review screen — because both are a filter on that table with the filter hard-coded. The unobjected section carries a comment saying so; it should be deleted when the table lands, not maintained alongside it.
+
+GPS is deliberately excluded from that table. The coordinates exist for the map, and a pin on a map is a different thing from a sortable column of where everyone was standing.

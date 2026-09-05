@@ -44,10 +44,7 @@ export default async function SubmitPage() {
         </div>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
           {state.display_name} — {state.confirmed_count} confirmed ·{' '}
-          {state.pending_count} pending
-          {state.auto_approved_count > 0 && (
-            <> · {state.auto_approved_count} unobjected</>
-          )}
+          {state.auto_approved_count} unobjected · {state.pending_count} pending
           {state.first_rejected !== null && (
             <> · rejected at {formatTarget(state.first_rejected)}</>
           )}

@@ -2,12 +2,18 @@ import { createClient } from '@/lib/supabase/server'
 import { formatTarget } from '@/lib/plate'
 
 /**
- * Claims that counted because nobody objected in time, rather than because
- * anyone approved them.
+ * TEMPORARY. Claims that counted because nobody objected in time, rather than
+ * because anyone approved them.
  *
- * Deliberately not on the review screen: there is nothing to decide here, and
- * a queue is for things that need deciding. It belongs beside a player's own
- * progress, which is where it is until §9's leaderboard exists.
+ * This is a placeholder for a filter. The claims table (submit-path.md §9)
+ * will list every claim with filters on status and player, and "auto-approved"
+ * is one of those filters — at which point this component is deleted rather
+ * than maintained. It exists now only because the distinction between
+ * "verified" and "unobjected" should be visible from the day auto-approval
+ * started counting, not from the day a table screen gets built.
+ *
+ * Not on the review screen either way: there is nothing to decide here, and a
+ * queue is for things that need deciding.
  */
 export async function AutoApproved({ playerId }: { playerId: string }) {
   const supabase = await createClient()
