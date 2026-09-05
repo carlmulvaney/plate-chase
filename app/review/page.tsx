@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { createClient } from '@/lib/supabase/server'
-import { displayPhotoUrl } from '@/lib/photo-urls'
+import { displayPhotoUrlIfPresent } from '@/lib/photo-urls'
 import { ReviewCard, type QueueItem } from './review-card'
 import { RejectedList, type RejectedItem } from './rejected-list'
 
@@ -18,7 +18,7 @@ export default async function ReviewPage() {
   const { data: queue } = await supabase
     .from('v_review_queue')
     .select(
-      'id, submitter, number, plate, photo_key, captured_at, previous_captured_at, previous_number, claims_after',
+      'id, submitter, number, plate, photo_key, captured_at, previous_captured_at, previous_number, claims_after, can_reject',
     )
 
   const { data: rejected } = await supabase
@@ -34,11 +34,12 @@ export default async function ReviewPage() {
         number: next.number,
         plate: next.plate,
         // Minted per render and short-lived; neither bucket is public.
-        photoUrl: await displayPhotoUrl(next.photo_key),
+        photoUrl: await displayPhotoUrlIfPresent(next.photo_key),
         capturedAt: next.captured_at,
         previousCapturedAt: next.previous_captured_at,
         previousNumber: next.previous_number,
         claimsAfter: next.claims_after,
+        canReject: next.can_reject,
       }
     : null
 

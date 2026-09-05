@@ -90,7 +90,7 @@ function rephrase(raw: string, ctx: ErrorContext): string | null {
     return 'You cannot review your own claim.'
   }
   if (raw.includes('finality window')) {
-    return 'This claim is too old to review now.'
+    return 'This claim is too old to reject now. It can still be approved.'
   }
   if (raw.includes('claim evidence is immutable')) {
     return 'A claim cannot be edited once submitted.'

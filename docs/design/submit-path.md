@@ -176,7 +176,7 @@ Pending claims sitting *above* a rejection are orphaned — they neither count n
 
 ## 7. Review flow
 
-A claim is reviewable when it is `pending`, `uploaded_at` is set, the reviewer is not the submitter, and it is inside the finality window (`now() - created_at < finality_days`). One approval settles it.
+A claim is reviewable when it is `pending`, `uploaded_at` is set, and the reviewer is not the submitter. One approval settles it.
 
 The review screen shows the photo, the claimed plate, and — importantly — **the capture time and how it compares to the previous claim's**. Rule 4 is currently enforced on a value no human ever sees; if the reviewer can't see it, they can't catch the case where it's wrong but well-formed.
 
@@ -186,7 +186,20 @@ The reviewer answers three questions, because the database already guaranteed ev
 2. Is it on a real vehicle?
 3. Does the plate in the photo match the claim?
 
-Past the finality window a claim can no longer be rejected. `finality_days` is read from `app_config` so admin can change it without a deploy.
+Past the finality window a claim can no longer be **rejected**. It can still be approved, at any age.
+
+That asymmetry is the point, and it was got wrong once. Bounding *every* verdict by the window made two promises hollow:
+
+- Undo is unbounded (below) so that a mistake found on day 15 is recoverable. But restoring a day-30 rejection put the claim back to `pending` where nobody was allowed to approve it — the row came back and the find did not. The window had been lifted from the undo and left on the re-judgement that undo exists to reopen.
+- With no auto-approval (§8), a claim nobody happened to look at for fourteen days could never count at all.
+
+Approval takes nothing from anyone, so nothing needs protecting from it. Only destruction is bounded.
+
+`finality_days` is read from `app_config` so admin can change it without a deploy.
+
+### What the reviewer answers
+
+The three questions §2 assigns to a human — is it a California plate, is it on a real vehicle, does the plate match the claim — are not printed on the screen. They are the reviewer's whole job and the screen exists to show the evidence for them; listing them pushed the photo away from the buttons without telling anyone anything. The database has already refused everything it can, so whatever reaches this screen is there for exactly those three judgements.
 
 ### Rejection undo
 

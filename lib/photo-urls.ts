@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { GetObjectCommand } from '@aws-sdk/client-s3'
+import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 import { r2, R2_BUCKET_DISPLAY } from '@/lib/r2'
@@ -23,4 +23,22 @@ export function displayPhotoUrl(photoKey: string, expiresIn = 10 * 60): Promise<
     new GetObjectCommand({ Bucket: R2_BUCKET_DISPLAY, Key: photoKey }),
     { expiresIn },
   )
+}
+
+/**
+ * The same URL, or null when there is no derivative to point at.
+ *
+ * The confirm step treats a failed transcode as non-fatal — the claim is valid
+ * and the original is safe — which left the review screen rendering a broken
+ * image with live verdict buttons under it. Seeing the photo is the entire
+ * point of that screen, so the absence has to be reported rather than
+ * discovered by the browser.
+ */
+export async function displayPhotoUrlIfPresent(photoKey: string): Promise<string | null> {
+  try {
+    await r2.send(new HeadObjectCommand({ Bucket: R2_BUCKET_DISPLAY, Key: photoKey }))
+  } catch {
+    return null
+  }
+  return displayPhotoUrl(photoKey)
 }

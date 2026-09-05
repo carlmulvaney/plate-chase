@@ -49,6 +49,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'claimId is required' }, { status: 400 })
   }
 
+  // Undo on a claim that is already pending hits the guard's "status did not
+  // change" early return: nothing happens, nothing is logged, and the row
+  // comes back looking like a success. Refuse it here rather than report an
+  // action that did not occur.
+  if (action === 'undo') {
+    const { data: current } = await supabase
+      .from('claims')
+      .select('status')
+      .eq('id', body.claimId)
+      .single()
+    if (current && current.status !== 'rejected') {
+      return NextResponse.json(
+        { error: 'that claim is not rejected, so there is nothing to undo' },
+        { status: 409 },
+      )
+    }
+  }
+
   const { data, error } = await supabase
     .from('claims')
     .update({ status: VERDICTS[action as keyof typeof VERDICTS] })

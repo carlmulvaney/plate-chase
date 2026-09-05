@@ -15,7 +15,7 @@
 --   psql -d pc_test -f supabase/migrations/20260830000000_plate_chase.sql
 --   psql -d pc_test -f supabase/tests/test_plate_chase.sql
 --
--- Expect: 56 ok, 0 FAIL. The file exits non-zero if any test fails, and is
+-- Expect: 66 ok, 0 FAIL. The file exits non-zero if any test fails, and is
 -- re-runnable against a fresh database.
 -- ============================================================================
 
@@ -293,24 +293,43 @@ select t_true('28 a pending claim above the rejection is orphaned, not counted',
 -- Undo — the reason rule 5 is derived
 -- ============================================================================
 
+-- Under the authed role, because §7 assigns this to RLS: "the original
+-- rejector or an admin. Enforced by RLS, not by hiding the button." Run as
+-- superuser these passed with the policy's rejected branch weakened to a bare
+-- status = 'rejected', because only the guard trigger was ever exercised.
+set role authed;
+
 select t_as('bbbbbbbb-0000-0000-0000-000000000002');
 select t_run('29 the original rejector can undo their own rejection',
   $q$update claims set status = 'pending'
       where player_id = 'aaaaaaaa-0000-0000-0000-000000000001' and number = 70$q$, false);
 
+select t_true('29a and it actually went back to pending',
+  (select status from claims
+    where player_id = 'aaaaaaaa-0000-0000-0000-000000000001' and number = 70) = 'pending');
+
 -- Reject it again so the remaining undo cases have something to undo.
 update claims set status = 'rejected'
   where player_id = 'aaaaaaaa-0000-0000-0000-000000000001' and number = 70;
 
+-- A policy that excludes a row does not raise; it matches nothing. So the
+-- assertion is on the row, not on an error — an error-based test here would
+-- pass against a schema with no policy at all.
 select t_as('aaaaaaaa-0000-0000-0000-000000000001');
-select t_run('30 the submitter cannot undo their own rejection',
-  $q$update claims set status = 'pending'
-      where player_id = 'aaaaaaaa-0000-0000-0000-000000000001' and number = 70$q$, true);
+update claims set status = 'pending'
+  where player_id = 'aaaaaaaa-0000-0000-0000-000000000001' and number = 70;
+
+select t_true('30 the submitter cannot undo their own rejection',
+  (select status from claims
+    where player_id = 'aaaaaaaa-0000-0000-0000-000000000001' and number = 70) = 'rejected',
+  'RLS let the submitter undo a rejection against them');
 
 select t_as('cccccccc-0000-0000-0000-000000000003');
 select t_run('31 an admin can undo a rejection',
   $q$update claims set status = 'pending'
       where player_id = 'aaaaaaaa-0000-0000-0000-000000000001' and number = 70$q$, false);
+
+reset role;
 
 select t_true('31a pending_count picks the claim back up after an undo',
   pending_count('aaaaaaaa-0000-0000-0000-000000000001') = 2,
@@ -388,8 +407,18 @@ select t_true('41 the queue shows another player''s uploaded pending claims',
   (select count(*) from v_review_queue where player_id = 'aaaaaaaa-0000-0000-0000-000000000001') = 2,
   (select coalesce(string_agg(number::text, ','), 'none') from v_review_queue));
 
+-- Bob's 104 must have a photo before this means anything. Without it the
+-- count is zero because of the upload filter, and removing the self filter
+-- from the view leaves this test still passing — which it did.
+reset role;
+update claims set uploaded_at = now()
+  where player_id = 'bbbbbbbb-0000-0000-0000-000000000002' and number = 104;
+set role authed;
+select t_as('bbbbbbbb-0000-0000-0000-000000000002');
+
 select t_true('42 the queue never shows your own claims',
-  (select count(*) from v_review_queue where player_id = 'bbbbbbbb-0000-0000-0000-000000000002') = 0);
+  (select count(*) from v_review_queue where player_id = 'bbbbbbbb-0000-0000-0000-000000000002') = 0,
+  'Bob has an uploaded pending claim at 104; it must not be offered to Bob');
 
 select t_true('43 the queue carries the predecessor capture time rule 4 compared',
   (select previous_captured_at is not null from v_review_queue where number = 70));
@@ -410,10 +439,8 @@ reset role;
 
 -- A claim with no predecessor must be distinguishable from one whose
 -- predecessor merely has no capture time. Bob's 104 is his seed_next, so there
--- is no claim at 103 and rule 4 passed vacuously. Give it a photo so it
--- reaches the queue, then look at it as Ann — the queue never shows your own.
-update claims set uploaded_at = now()
-  where player_id = 'bbbbbbbb-0000-0000-0000-000000000002' and number = 104;
+-- is no claim at 103 and rule 4 passed vacuously. Looked at as Ann, since the
+-- queue never shows your own.
 select t_as('aaaaaaaa-0000-0000-0000-000000000001');
 
 select t_true('43a a claim with no predecessor reports no previous number',
@@ -455,6 +482,102 @@ update claims set status = 'pending'
 
 select t_true('48 undo returns the orphaned claims to the queue',
   (select count(*) from v_review_queue where player_id = 'aaaaaaaa-0000-0000-0000-000000000001') = 2);
+
+
+-- ============================================================================
+-- The finality window  (spec §7)
+--
+-- Untested until now: the window could be deleted from all three places it
+-- lives — the policy, the queue view and the guard — and every test still
+-- passed. It bounds rejection only; approval is not destruction and is open
+-- at any age.
+--
+-- created_at is immutable to the guard, so these fixtures are aged as
+-- superuser with the guard off, which is a fixture concern and not a rule one.
+-- ============================================================================
+
+reset role;
+-- Superuser again, but auth.uid() still reports whoever acted last, and the
+-- players guard rightly refuses a non-admin changing seed_next. Fixtures act
+-- as nobody.
+select t_as(null);
+
+insert into auth.users (id, email, raw_user_meta_data)
+  values ('dddddddd-0000-0000-0000-000000000004', 'dee@example.com', '{"display_name":"Dee"}');
+update players set seed_next = 200 where id = 'dddddddd-0000-0000-0000-000000000004';
+
+insert into claims (player_id, number, plate, photo_key, uploaded_at)
+  values ('dddddddd-0000-0000-0000-000000000004', 200, '1ABC200', 'k/dee/200', now());
+insert into claims (player_id, number, plate, photo_key, uploaded_at)
+  values ('dddddddd-0000-0000-0000-000000000004', 201, '1ABC201', 'k/dee/201', now());
+
+alter table claims disable trigger trg_claims_before_update_guard;
+update claims set created_at = now() - interval '30 days'
+  where player_id = 'dddddddd-0000-0000-0000-000000000004';
+alter table claims enable trigger trg_claims_before_update_guard;
+
+select t_true('49 finality_days is read from app_config, not hard-coded',
+  finality_days() = 14);
+
+set role authed;
+select t_as('bbbbbbbb-0000-0000-0000-000000000002');
+
+-- Rejection is bounded.
+select t_run('50 a claim past the window cannot be rejected',
+  $q$update claims set status = 'rejected'
+      where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 200$q$, true);
+
+select t_true('50a and it is still pending',
+  (select status from claims
+    where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 200) = 'pending');
+
+-- Approval is not. This is the case that made an unreviewed claim permanently
+-- uncountable, since "no auto-approval" means only a human can approve it.
+select t_run('51 a claim past the window can still be approved',
+  $q$update claims set status = 'approved'
+      where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 200$q$, false);
+
+select t_true('51a and it counts',
+  confirmed_count('dddddddd-0000-0000-0000-000000000004') = 201,
+  'seed_next 200 plus the one approved claim');
+
+-- An old claim is still reviewable, so it stays in the queue, carrying whether
+-- rejection is still open.
+select t_true('52 an old claim is still queued, and says rejection is closed',
+  (select can_reject = false from v_review_queue
+    where player_id = 'dddddddd-0000-0000-0000-000000000004' and number = 201));
+
+-- The defect this section exists for: undo past the window restored the row
+-- and then stranded it, because the re-judgement undo exists to reopen was
+-- still bounded. Dee lost the find anyway.
+reset role;
+select t_as(null);
+insert into auth.users (id, email, raw_user_meta_data)
+  values ('eeeeeeee-0000-0000-0000-000000000005', 'eve@example.com', '{"display_name":"Eve"}');
+insert into claims (player_id, number, plate, photo_key, uploaded_at, status, reviewed_by, reviewed_at)
+  values ('eeeeeeee-0000-0000-0000-000000000005', 0, '1ABC000', 'k/eve/0', now(),
+          'rejected', 'bbbbbbbb-0000-0000-0000-000000000002', now());
+alter table claims disable trigger trg_claims_before_update_guard;
+update claims set created_at = now() - interval '30 days'
+  where player_id = 'eeeeeeee-0000-0000-0000-000000000005';
+alter table claims enable trigger trg_claims_before_update_guard;
+
+set role authed;
+select t_as('bbbbbbbb-0000-0000-0000-000000000002');
+
+select t_run('53 a rejection can be undone past the window',
+  $q$update claims set status = 'pending'
+      where player_id = 'eeeeeeee-0000-0000-0000-000000000005' and number = 0$q$, false);
+
+select t_run('54 and the claim it restored can then be judged',
+  $q$update claims set status = 'approved'
+      where player_id = 'eeeeeeee-0000-0000-0000-000000000005' and number = 0$q$, false);
+
+select t_true('54a so the undo actually gave the find back',
+  confirmed_count('eeeeeeee-0000-0000-0000-000000000005') = 1,
+  'undo restored the row but left it unjudgeable, so this stayed 0');
+
+reset role;
 
 
 -- ============================================================================

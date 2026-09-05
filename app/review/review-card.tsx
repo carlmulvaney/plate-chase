@@ -9,13 +9,16 @@ export type QueueItem = {
   submitter: string
   number: number
   plate: string
-  photoUrl: string
+  /** Null when the display derivative is missing — a failed transcode. */
+  photoUrl: string | null
   capturedAt: string | null
   previousCapturedAt: string | null
   /** Null when there is no predecessor at all — the start of a run. */
   previousNumber: number | null
   /** Claims of theirs above this one, which a rejection would orphan. */
   claimsAfter: number
+  /** False past the finality window: it can still be approved, not rejected. */
+  canReject: boolean
 }
 
 const when = (iso: string) =>
@@ -140,12 +143,19 @@ export function ReviewCard({ item, remaining }: { item: QueueItem; remaining: nu
         buttons on this project that should shift under the cursor.
       */}
       <div className="flex h-80 w-full items-center justify-center overflow-hidden rounded-md bg-neutral-100 dark:bg-neutral-900">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={item.photoUrl}
-          alt={`Claimed plate ${item.plate}`}
-          className="max-h-full max-w-full object-contain"
-        />
+        {item.photoUrl ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={item.photoUrl}
+            alt={`Claimed plate ${item.plate}`}
+            className="max-h-full max-w-full object-contain"
+          />
+        ) : (
+          <p className="max-w-xs px-4 text-center text-sm text-neutral-500">
+            No viewable copy of this photo. The original is safe; the version
+            for display was never produced.
+          </p>
+        )}
       </div>
 
       {/*
@@ -184,19 +194,28 @@ export function ReviewCard({ item, remaining }: { item: QueueItem; remaining: nu
       <div className="flex gap-3">
         <button
           onClick={() => decide('reject')}
-          disabled={busy}
+          disabled={busy || !item.canReject || !item.photoUrl}
+          title={item.canReject ? undefined : 'Past the finality window'}
           className="flex-1 rounded-md bg-red-600 px-3 py-2.5 font-medium text-white transition enabled:hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Reject
         </button>
         <button
           onClick={() => decide('approve')}
-          disabled={busy}
+          disabled={busy || !item.photoUrl}
           className="flex-1 rounded-md bg-green-600 px-3 py-2.5 font-medium text-white transition enabled:hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Approve
         </button>
       </div>
+
+      <p className="min-h-4 text-xs text-amber-600 dark:text-amber-500">
+        {!item.photoUrl
+          ? 'No photo to judge, so neither verdict is available.'
+          : !item.canReject
+            ? 'Past the finality window — this can be approved but no longer rejected.'
+            : ''}
+      </p>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       <p className="text-xs text-neutral-500">
