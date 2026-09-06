@@ -8,6 +8,7 @@ export type RejectedItem = {
   id: string
   number: number
   plate: string
+  photoUrl: string | null
   submitter: string
   rejectedBy: string | null
   reviewedAt: string | null
@@ -56,7 +57,27 @@ function RejectedRow({ item }: { item: RejectedItem }) {
 
   return (
     <li className="flex items-center justify-between gap-3 rounded-lg border border-neutral-300 p-3 dark:border-neutral-700">
-      <div className="min-w-0">
+      {/*
+        Fixed 64px box whether or not the photo loads, so a row never resizes
+        around its image and the Undo button stays where the cursor left it.
+        NO PHOTO is the same label the review card uses for the same condition.
+      */}
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-neutral-300 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900">
+        {item.photoUrl ? (
+          <a href={item.photoUrl} target="_blank" rel="noopener noreferrer" className="block h-full w-full">
+            {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL, expires in minutes; the loader would cache it past that */}
+            <img src={item.photoUrl} alt={`Plate ${item.plate}`} className="h-full w-full object-cover" />
+          </a>
+        ) : (
+          <span className="text-center text-[10px] font-medium leading-tight text-neutral-500">
+            NO
+            <br />
+            PHOTO
+          </span>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
         <p className="text-sm">
           {item.submitter} · {formatTarget(item.number)}{' '}
           <span className="font-mono text-neutral-500">{item.plate}</span>

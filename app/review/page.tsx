@@ -23,7 +23,7 @@ export default async function ReviewPage() {
 
   const { data: rejected } = await supabase
     .from('v_rejected_claims')
-    .select('id, number, plate, submitter, rejected_by, reviewed_at, can_undo')
+    .select('id, number, plate, photo_key, submitter, rejected_by, reviewed_at, can_undo')
     .limit(10)
 
   const next = queue?.[0]
@@ -42,15 +42,21 @@ export default async function ReviewPage() {
       }
     : null
 
-  const rejectedItems: RejectedItem[] = (rejected ?? []).map((r) => ({
-    id: r.id,
-    number: r.number,
-    plate: r.plate,
-    submitter: r.submitter,
-    rejectedBy: r.rejected_by,
-    reviewedAt: r.reviewed_at,
-    canUndo: r.can_undo,
-  }))
+  // Signed per render like the queue's photo. A rejection is the one verdict
+  // the submitter may want to argue with, and they cannot argue with a row of
+  // text — so the list shows what was actually submitted.
+  const rejectedItems: RejectedItem[] = await Promise.all(
+    (rejected ?? []).map(async (r) => ({
+      id: r.id,
+      number: r.number,
+      plate: r.plate,
+      photoUrl: await displayPhotoUrlIfPresent(r.photo_key),
+      submitter: r.submitter,
+      rejectedBy: r.rejected_by,
+      reviewedAt: r.reviewed_at,
+      canUndo: r.can_undo,
+    })),
+  )
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-6 p-6">

@@ -172,6 +172,8 @@ confirmed_count := seed_next
 
 Pending claims sitting *above* a rejection are orphaned — they neither count nor block. Surface them in the UI as blocked rather than awaiting review.
 
+A rejection sends the player back to that number, so shooting it again has to work. The rejected row is kept — it is the record of what happened — but once a live claim exists at the same number it no longer holds the line: the replacement counts, the orphans above it come back, and the target moves on. A rejection costs the finds above it until the number is re-claimed, not forever.
+
 ---
 
 ## 7. Review flow

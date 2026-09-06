@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { SubmitForm } from './submit-form'
 import { AutoApproved } from './auto-approved'
+import { Blocked, type BlockedItem } from './blocked'
 import { formatTarget } from '@/lib/plate'
 
 export default async function SubmitPage() {
@@ -19,6 +20,19 @@ export default async function SubmitPage() {
     )
     .eq('player_id', auth.user.id)
     .single()
+
+  const { data: blockedRows } = await supabase
+    .from('v_blocked_claims')
+    .select('id, number, plate, status, can_delete')
+    .eq('player_id', auth.user.id)
+
+  const blocked: BlockedItem[] = (blockedRows ?? []).map((b) => ({
+    id: b.id,
+    number: b.number,
+    plate: b.plate,
+    status: b.status,
+    canDelete: b.can_delete,
+  }))
 
   if (!state) {
     return (
@@ -55,6 +69,8 @@ export default async function SubmitPage() {
       </header>
 
       <SubmitForm target={state.next_target} />
+
+      <Blocked items={blocked} blockedBy={state.first_rejected} />
 
       <AutoApproved playerId={auth.user.id} />
     </main>

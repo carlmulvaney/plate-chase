@@ -15,7 +15,7 @@
 --   psql -d pc_test -f supabase/migrations/20260830000000_plate_chase.sql
 --   psql -d pc_test -f supabase/tests/test_plate_chase.sql
 --
--- Expect: 73 ok, 0 FAIL. The file exits non-zero if any test fails, and is
+-- Expect: 89 ok, 0 FAIL. The file exits non-zero if any test fails, and is
 -- re-runnable against a fresh database.
 -- ============================================================================
 
@@ -620,6 +620,150 @@ select t_run('54 and the claim it restored can then be judged',
 select t_true('54a so the undo actually gave the find back',
   confirmed_count('eeeeeeee-0000-0000-0000-000000000005') = 1,
   'undo restored the row but left it unjudgeable, so this stayed 0');
+
+reset role;
+
+
+-- ============================================================================
+-- Re-claiming a number after a rejection
+--
+-- The whole point of a rejection is that the player goes back and shoots that
+-- number again: one_live_claim_per_number excludes rejected rows precisely so
+-- they can. Nothing tested whether the replacement then counts.
+--
+-- Fay: 000 approved, 001 rejected. She re-shoots 001.
+-- ============================================================================
+
+select t_as(null);
+insert into auth.users (id, email, raw_user_meta_data)
+  values ('ffffffff-0000-0000-0000-000000000006', 'fay@example.com', '{"display_name":"Fay"}');
+
+set role authed;
+select t_as('ffffffff-0000-0000-0000-000000000006');
+insert into claims (player_id, number, plate, photo_key, uploaded_at)
+  values ('ffffffff-0000-0000-0000-000000000006', 0, '1ABC000', 'k/fay/0', now());
+insert into claims (player_id, number, plate, photo_key, uploaded_at)
+  values ('ffffffff-0000-0000-0000-000000000006', 1, '1ABC001', 'k/fay/1', now());
+
+select t_as('bbbbbbbb-0000-0000-0000-000000000002');
+update claims set status = 'approved'
+  where player_id = 'ffffffff-0000-0000-0000-000000000006' and number = 0;
+update claims set status = 'rejected'
+  where player_id = 'ffffffff-0000-0000-0000-000000000006' and number = 1;
+
+select t_true('55 the rejection sends her back to that number',
+  next_target('ffffffff-0000-0000-0000-000000000006') = 1);
+
+select t_as('ffffffff-0000-0000-0000-000000000006');
+
+select t_run('56 the rejected number can be claimed again',
+  $q$insert into claims (player_id, number, plate, photo_key, uploaded_at)
+     values ('ffffffff-0000-0000-0000-000000000006', 1, '2ABC001', 'k/fay/1b', now())$q$, false);
+
+-- The replacement has to stand on its own. first_rejected_number still sees
+-- the superseded row at the same number, so without that being accounted for
+-- the new claim is born inactive and the player never leaves this number.
+select t_true('57 the replacement claim is live',
+  is_active_claim('ffffffff-0000-0000-0000-000000000006', 1,
+    (select status from claims
+      where player_id = 'ffffffff-0000-0000-0000-000000000006'
+        and number = 1 and status <> 'rejected')),
+  'the re-shot claim is inert, so the rejection is a permanent wall');
+
+select t_true('58 and it advances the target',
+  next_target('ffffffff-0000-0000-0000-000000000006') = 2,
+  'target stayed on the rejected number even after it was re-claimed');
+
+select t_as('bbbbbbbb-0000-0000-0000-000000000002');
+select t_run('59 the replacement can be approved',
+  $q$update claims set status = 'approved'
+      where player_id = 'ffffffff-0000-0000-0000-000000000006'
+        and number = 1 and status = 'pending'$q$, false);
+
+select t_true('60 and approving it gives the find back',
+  confirmed_count('ffffffff-0000-0000-0000-000000000006') = 2,
+  'approved but still not counted, because it sits at the rejected number');
+
+select t_true('61 the rejected row is kept, not overwritten',
+  (select count(*) from claims
+    where player_id = 'ffffffff-0000-0000-0000-000000000006'
+      and number = 1 and status = 'rejected') = 1);
+
+reset role;
+
+
+-- ============================================================================
+-- Blocked claims are visible to their owner  (spec §6)
+--
+-- Gil: 000 approved, then 001 rejected, stranding 002 and 003 above it.
+-- ============================================================================
+
+select t_as(null);
+insert into auth.users (id, email, raw_user_meta_data)
+  values ('11111111-0000-0000-0000-000000000007', 'gil@example.com', '{"display_name":"Gil"}');
+
+set role authed;
+select t_as('11111111-0000-0000-0000-000000000007');
+insert into claims (player_id, number, plate, photo_key, uploaded_at) values
+  ('11111111-0000-0000-0000-000000000007', 0, '1ABC000', 'k/gil/0', now()),
+  ('11111111-0000-0000-0000-000000000007', 1, '1ABC001', 'k/gil/1', now()),
+  ('11111111-0000-0000-0000-000000000007', 2, '1ABC002', 'k/gil/2', now()),
+  ('11111111-0000-0000-0000-000000000007', 3, '1ABC003', 'k/gil/3', now());
+
+select t_as('bbbbbbbb-0000-0000-0000-000000000002');
+update claims set status = 'approved'
+  where player_id = '11111111-0000-0000-0000-000000000007' and number = 0;
+update claims set status = 'rejected'
+  where player_id = '11111111-0000-0000-0000-000000000007' and number = 1;
+
+select t_true('62 claims stranded above the rejection are listed as blocked',
+  (select count(*) from v_blocked_claims
+    where player_id = '11111111-0000-0000-0000-000000000007') = 2,
+  'expected 002 and 003');
+
+select t_true('63 and each names the rejection that stranded it',
+  (select blocked_by from v_blocked_claims
+    where player_id = '11111111-0000-0000-0000-000000000007' and number = 2) = 1);
+
+select t_true('64 a claim that still stands is not listed',
+  (select count(*) from v_blocked_claims
+    where player_id = '11111111-0000-0000-0000-000000000007' and number = 0) = 0,
+  'an active claim was reported as blocked');
+
+select t_true('65 the rejection itself is not listed as blocked',
+  (select count(*) from v_blocked_claims
+    where player_id = '11111111-0000-0000-0000-000000000007' and number = 1) = 0);
+
+select t_as('11111111-0000-0000-0000-000000000007');
+
+select t_true('66 can_delete is offered on a blocked pending claim',
+  (select can_delete from v_blocked_claims
+    where player_id = '11111111-0000-0000-0000-000000000007' and number = 3));
+
+-- can_delete is a claim about the policy, so check the policy agrees rather
+-- than trusting the column that describes it.
+select t_run('67 and the policy permits that delete',
+  $q$delete from claims
+      where player_id = '11111111-0000-0000-0000-000000000007' and number = 3$q$, false);
+
+select t_true('67a the row is actually gone',
+  (select count(*) from claims
+    where player_id = '11111111-0000-0000-0000-000000000007' and number = 3) = 0,
+  'RLS matched no rows and the delete silently did nothing');
+
+-- Re-shooting the rejected number takes the wall down, and 002 — untouched
+-- throughout — comes back on its own.
+insert into claims (player_id, number, plate, photo_key, uploaded_at)
+  values ('11111111-0000-0000-0000-000000000007', 1, '2ABC001', 'k/gil/1b', now());
+
+select t_true('68 re-claiming the rejected number frees what was above it',
+  (select count(*) from v_blocked_claims
+    where player_id = '11111111-0000-0000-0000-000000000007') = 0,
+  'the wall came down but the orphan stayed blocked');
+
+select t_true('69 and the target moves past the claim that was stranded',
+  next_target('11111111-0000-0000-0000-000000000007') = 3,
+  'expected 003: 000, 001 re-claimed and 002 all stand again');
 
 reset role;
 
