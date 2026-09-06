@@ -42,9 +42,12 @@ export default async function SubmitPage() {
             Review
           </Link>
         </div>
+        {/* Unobjected is a subset of confirmed, not a bucket beside it.
+            Parentheses rather than a separator, so the two are not read as
+            adding up to a claim count that was never made. */}
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          {state.display_name} — {state.confirmed_count} confirmed ·{' '}
-          {state.auto_approved_count} unobjected · {state.pending_count} pending
+          {state.display_name} — {state.confirmed_count} confirmed{' '}
+          ({state.auto_approved_count} unobjected) · {state.pending_count} pending
           {state.first_rejected !== null && (
             <> · rejected at {formatTarget(state.first_rejected)}</>
           )}
